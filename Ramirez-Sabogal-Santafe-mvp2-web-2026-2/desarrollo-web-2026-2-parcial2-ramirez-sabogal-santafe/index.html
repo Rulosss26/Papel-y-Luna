@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Papel y Luna | Sistema POS</title>
+  <link rel="icon" type="image/png" href="img/logo.png">
+  <link rel="stylesheet" href="CSS.css">
+  <script>
+    try {
+      if (["cajero", "administrador"].includes(localStorage.getItem("rolActivo"))) document.documentElement.classList.add("rol-recordado");
+      else document.documentElement.classList.add("rol-pendiente");
+    } catch (_) { }
+  </script>
+</head>
+
+<body>
+
+  <section id="splash-screen" class="splash-screen" aria-labelledby="splash-titulo">
+    <div class="splash-contenido">
+      <img class="splash-logo" src="img/logo.png" alt="Logo de Papel y Luna">
+      <div class="splash-info"><h1 id="splash-titulo">Papel y Luna</h1><p>Sistema POS</p></div>
+      <div class="splash-buttons" aria-label="Selecciona tu rol">
+        <button type="button" class="splash-button cajero" data-rol="cajero">👤 Cajero(a)</button>
+        <button type="button" class="splash-button administrador" data-rol="administrador">🔐 Administrador(a)</button>
+      </div>
+      <p id="splash-mensaje" class="splash-mensaje" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  <header class="cabecera no-imprimir">
+    <img class="logo" src="img/logo.png" alt="Papel y Luna">
+    <div>
+      <h1>Papel y Luna</h1>
+      <p>Papelería - Sistema de facturación</p>
+    </div>
+    <button type="button" id="cambiar-rol" class="boton boton-secundario cambiar-rol no-imprimir">Cambiar rol</button>
+  </header>
+
+  <nav class="nav-principal no-imprimir">
+    <button type="button" class="nav-boton activo" data-vista="vender">Vender</button>
+    <button type="button" class="nav-boton" data-vista="productos">Productos</button>
+    <button type="button" class="nav-boton solo-administrador" data-vista="compras">Compras</button>
+    <button type="button" class="nav-boton solo-administrador" data-vista="categorias">Categorías</button>
+    <button type="button" class="nav-boton solo-administrador" data-vista="proveedores">Proveedores</button>
+    <button type="button" class="nav-boton" data-vista="clientes">Clientes</button>
+    <button type="button" class="nav-boton" data-vista="historial">Historial de ventas</button>
+  </nav>
+  <div class="invoice-menu-container">
+    <button type="button" id="invoice-icon" class="invoice-icon" aria-label="Abrir venta actual" aria-controls="panel-factura" aria-expanded="false" title="Venta actual">
+      <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <path d="M8 3.5h10l6 6V28H8a2 2 0 0 1-2-2V5.5a2 2 0 0 1 2-2Z" />
+        <path d="M18 3.5v7h6M11 16h10M11 20h10M11 24h7" />
+      </svg>
+      <span id="invoice-count" class="invoice-count" aria-label="0 productos">0</span>
+    </button>
+    <div id="invoice-menu" class="invoice-menu" aria-hidden="true">
+      <aside id="panel-factura" class="factura" aria-labelledby="titulo-venta">
+      <div class="venta-encabezado">
+        <h2 id="titulo-venta">Venta actual</h2>
+        <span id="estado-venta" class="etiqueta-estado">Nueva</span>
+        <button type="button" id="boton-cerrar-panel-venta" class="boton-cerrar-panel" aria-label="Cerrar panel de la venta" title="Cerrar panel">✕</button>
+      </div>
+
+      <div class="venta-acciones">
+        <button type="button" id="boton-ventas-abiertas" class="boton boton-secundario">⌛ Ventas abiertas (<span id="contador-abiertas">0</span>)</button>
+        <button type="button" id="boton-nueva-venta-panel" class="boton boton-secundario">+ Nueva venta</button>
+      </div>
+
+      <label for="select-cliente-venta" class="etiqueta-campo">Cliente (opcional)</label>
+      <select id="select-cliente-venta" class="campo-select"></select>
+
+      <div id="lista-factura"></div>
+
+      <div id="factura-vacia">
+        <p>📋</p>
+        <p><strong>Tu venta está vacía</strong></p>
+        <p>Agrega productos desde el catálogo para comenzar</p>
+      </div>
+
+      <div class="totales">
+        <p><span>Subtotal</span> <span id="subtotal">$0</span></p>
+        <p><span>IVA (19%)</span> <span id="iva">$0</span></p>
+        <p class="total-final"><span>Total a pagar</span> <span id="total">$0</span></p>
+      </div>
+
+      <p id="aviso-cambios-venta" class="aviso-suave oculto">Hay cambios sin guardar en esta venta abierta.</p>
+
+      <button id="boton-guardar-abierta" class="boton boton-secundario ancho" disabled>📥 Guardar como venta abierta</button>
+      <button id="boton-finalizar" class="boton boton-negro ancho" disabled>Finalizar venta</button>
+      </aside>
+    </div>
+  </div>
+
+  <!-- Carga inicial y error de conexión con el servicio -->
+  <div id="carga-global" class="estado-global no-imprimir">
+    <div class="spinner"></div>
+    <p>Cargando datos del servicio…</p>
+  </div>
+
+  <div id="error-global" class="estado-global oculto no-imprimir">
+    <p class="icono-confirmacion">⚠️</p>
+    <p><strong>No se pudieron cargar los datos</strong></p>
+    <p id="error-global-mensaje" class="texto-suave"></p>
+    <button type="button" id="boton-reintentar" class="boton boton-negro">Reintentar</button>
+  </div>
+
+  <!-- ===================== VENDER ===================== -->
+  <main id="vista-vender" class="vista contenedor oculta">
+
+    <section class="catalogo">
+      <div class="barra-catalogo">
+        <h2>Catálogo de productos</h2>
+        <input type="text" id="input-buscar" placeholder="Buscar por nombre, id o código" autocomplete="off">
+      </div>
+
+      <div id="categorias" class="categorias"></div>
+
+      <div id="productos" class="productos"></div>
+
+      <p id="sin-resultados" class="oculto">No se encontraron productos que coincidan con tu búsqueda.</p>
+    </section>
+
+
+
+  </main>
+
+  <!-- ===================== PRODUCTOS ===================== -->
+  <main id="vista-productos" class="vista contenedor oculta">
+    <section class="panel-productos">
+      <div class="barra-catalogo">
+        <h2>Gestión de productos</h2>
+        <button type="button" id="boton-nuevo-producto" class="boton boton-negro">+ Nuevo producto</button>
+      </div>
+
+      <div class="tabla-scroll">
+        <table class="tabla-datos">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Nombre</th>
+              <th>Categoría</th>
+              <th>Precio venta</th>
+              <th>Costo</th>
+              <th>Stock</th>
+              <th>Inventario</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="tabla-productos-cuerpo"></tbody>
+        </table>
+      </div>
+      <p id="productos-vacio" class="texto-suave oculto">Todavía no hay productos registrados.</p>
+    </section>
+  </main>
+
+  <!-- ===================== COMPRAS ===================== -->
+  <main id="vista-compras" class="vista contenedor oculta">
+    <section class="panel-historial">
+      <div class="barra-catalogo">
+        <h2>Compras</h2>
+        <button type="button" id="boton-nueva-compra" class="boton boton-negro">+ Nueva compra</button>
+      </div>
+      <p id="compras-estado" class="texto-suave oculto"></p>
+      <div id="compras-lista" class="historial-lista"></div>
+      <p id="compras-vacio" class="texto-suave oculto">Todavía no se ha registrado ninguna compra.</p>
+    </section>
+  </main>
+
+  <!-- ===================== CATEGORÍAS / PROVEEDORES / CLIENTES ===================== -->
+  <!-- El contenido de estas vistas se genera desde JavaScript/vistas/entidades.js -->
+  <main id="vista-categorias" class="vista contenedor oculta" data-entidad="categorias"></main>
+  <main id="vista-proveedores" class="vista contenedor oculta" data-entidad="proveedores"></main>
+  <main id="vista-clientes" class="vista contenedor oculta" data-entidad="clientes"></main>
+
+  <!-- ===================== HISTORIAL ===================== -->
+  <main id="vista-historial" class="vista contenedor oculta">
+    <section class="panel-historial">
+      <h2>Historial de ventas</h2>
+      <p id="historial-estado" class="texto-suave oculto"></p>
+      <div id="historial-lista" class="historial-lista"></div>
+      <p id="historial-vacio" class="texto-suave oculto">Todavía no se ha cerrado ninguna venta.</p>
+    </section>
+  </main>
+
+  <!-- ===================== MODALES ===================== -->
+
+  <div id="modal-producto" class="modal oculto">
+    <div class="modal-caja modal-formulario">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-producto">✕</button>
+      <h3 id="titulo-modal-producto">Nuevo producto</h3>
+
+      <div id="errores-producto" class="errores-formulario oculto"></div>
+
+      <form id="formulario-producto" novalidate>
+        <label for="campo-nombre">Nombre</label>
+        <input type="text" id="campo-nombre" required>
+
+        <label for="campo-categoria">Categoría</label>
+        <select id="campo-categoria" required></select>
+
+        <div class="fila-campos">
+          <div>
+            <label for="campo-precio">Precio de venta</label>
+            <input type="number" id="campo-precio" min="0" step="1" required>
+          </div>
+          <div>
+            <label for="campo-costo">Costo</label>
+            <input type="number" id="campo-costo" min="0" step="1" required>
+          </div>
+        </div>
+
+        <label for="campo-codigo">Código interno (automático)</label>
+        <input type="text" id="campo-codigo" readonly>
+
+        <div class="fila-campos">
+          <div>
+            <label for="campo-inventario">Seguimiento de inventario</label>
+            <select id="campo-inventario">
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div>
+            <label for="campo-stock">Stock</label>
+            <input type="number" id="campo-stock" min="0" step="1">
+          </div>
+        </div>
+
+        <button type="submit" id="boton-guardar-producto" class="boton boton-negro ancho">Guardar producto</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-edicion-rapida" class="modal oculto">
+    <div class="modal-caja modal-formulario">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-edicion-rapida">✕</button>
+      <h3>Editar producto</h3>
+      <p id="edicion-rapida-codigo" class="texto-suave"></p>
+
+      <div id="errores-edicion-rapida" class="errores-formulario oculto"></div>
+
+      <form id="formulario-edicion-rapida" novalidate>
+        <label for="rapido-nombre">Nombre</label>
+        <input type="text" id="rapido-nombre">
+
+        <label for="rapido-categoria">Categoría</label>
+        <select id="rapido-categoria"></select>
+
+        <div class="fila-campos">
+          <div>
+            <label for="rapido-precio">Precio de venta</label>
+            <input type="number" id="rapido-precio" min="0" step="1">
+          </div>
+          <div>
+            <label for="rapido-costo">Costo</label>
+            <input type="number" id="rapido-costo" min="0" step="1">
+          </div>
+        </div>
+
+        <p class="texto-suave nota">El stock se ajusta desde la sección Productos.</p>
+
+        <button type="submit" id="boton-guardar-rapido" class="boton boton-negro ancho">Guardar cambios</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-ventas-abiertas" class="modal oculto">
+    <div class="modal-caja factura-caja">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-ventas-abiertas">✕</button>
+      <h3>Ventas abiertas</h3>
+      <p id="abiertas-estado" class="texto-suave oculto"></p>
+
+      <h4 class="subtitulo-abiertas">🛒 Ventas sin cerrar</h4>
+      <div id="abiertas-lista" class="historial-lista"></div>
+      <p id="abiertas-vacio" class="texto-suave oculto">No hay ventas sin cerrar.</p>
+
+      <h4 class="subtitulo-abiertas">💵 Ventas con saldo pendiente (Debe)</h4>
+      <div id="deudas-lista" class="historial-lista"></div>
+      <p id="deudas-vacio" class="texto-suave oculto">Nadie tiene saldo pendiente.</p>
+    </div>
+  </div>
+
+  <!-- Detalle de una venta con deuda: cuánto debe, abonos y registrar un nuevo pago -->
+  <div id="modal-deuda" class="modal oculto">
+    <div class="modal-caja factura-caja">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-deuda">✕</button>
+      <div id="contenido-deuda"></div>
+
+      <div id="formulario-deuda" class="campos-efectivo">
+        <label for="campo-abono-deuda">¿Cuánto paga ahora?</label>
+        <input type="number" id="campo-abono-deuda" min="1" step="1" inputmode="numeric" placeholder="Ej: 10000">
+        <button type="button" id="boton-pagar-todo-deuda" class="boton boton-secundario ancho">Paga todo lo que debe</button>
+        <p class="pago-cambio">Nuevo saldo: <strong id="nuevo-saldo-deuda">$0</strong></p>
+      </div>
+
+      <div id="errores-deuda" class="errores-formulario oculto"></div>
+
+      <button type="button" id="boton-registrar-abono-deuda" class="boton boton-negro ancho">Registrar abono</button>
+      <button type="button" id="boton-volver-abiertas" class="boton boton-secundario ancho">⌛ Volver a ventas abiertas</button>
+    </div>
+  </div>
+
+  <div id="modal-pago" class="modal oculto">
+    <div class="modal-caja">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-pago">✕</button>
+      <h3>Confirmar venta</h3>
+      <p class="pago-total">Total a pagar: <strong id="pago-total-valor">$0</strong></p>
+
+      <div id="opciones-pago" class="opciones-pago"></div>
+
+      <fieldset id="opciones-deuda" class="opciones-deuda oculto">
+        <legend>¿Es deuda total o parcial?</legend>
+        <label><input type="radio" name="tipo-deuda" value="total" checked> Deuda total</label>
+        <label><input type="radio" name="tipo-deuda" value="parcial"> Pago parcial</label>
+      </fieldset>
+
+      <div class="campo-cliente-pago">
+        <label for="select-cliente-pago" id="etiqueta-cliente-pago">Cliente (opcional)</label>
+        <select id="select-cliente-pago" class="campo-select"></select>
+        <button type="button" id="boton-crear-cliente-pago" class="boton boton-secundario ancho">Crear cliente rápido</button>
+      </div>
+
+      <div id="campos-efectivo" class="campos-efectivo">
+        <label for="campo-recibido">Valor recibido</label>
+        <input type="number" id="campo-recibido" min="0" step="100" placeholder="Ej: 50000">
+        <p class="pago-cambio">Cambio a entregar: <strong id="pago-cambio-valor">$0</strong></p>
+        <p id="aviso-pago-insuficiente" class="aviso-error oculto">El valor recibido es menor al total.</p>
+      </div>
+
+      <div id="campos-deuda-parcial" class="campos-deuda-parcial oculto">
+        <label for="total-deuda-parcial">Total de la venta</label>
+        <input type="number" id="total-deuda-parcial" readonly>
+        <label for="campo-pago-parcial">¿Cuánto pagó el cliente?</label>
+        <input type="number" id="campo-pago-parcial" min="1" step="1" inputmode="numeric" placeholder="Ingresa el abono">
+        <label for="saldo-deuda-parcial">Saldo pendiente</label>
+        <input type="number" id="saldo-deuda-parcial" readonly>
+      </div>
+
+      <div id="errores-pago" class="errores-formulario oculto"></div>
+
+      <button type="button" id="boton-confirmar-venta" class="boton boton-negro ancho">Confirmar venta</button>
+    </div>
+  </div>
+
+  <div id="modal-abono" class="modal modal-abono oculto">
+    <div class="modal-caja modal-formulario">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-abono" aria-label="Cerrar">×</button>
+      <h3>Cobrar saldo pendiente</h3>
+      <div id="resumen-abono" class="resumen-abono"></div>
+      <div id="errores-abono" class="errores-formulario oculto"></div>
+      <label for="campo-abono">¿Cuánto se cobrará ahora?</label>
+      <input type="number" id="campo-abono" min="1" step="1" inputmode="numeric" required>
+      <p>Saldo restante después del abono: <strong id="saldo-restante-abono">$0</strong></p>
+      <button type="button" id="boton-confirmar-abono" class="boton boton-negro ancho">Registrar abono</button>
+    </div>
+  </div>
+
+  <div id="vista-confirmacion" class="modal oculto no-imprimir">
+    <div class="modal-caja">
+      <p class="icono-confirmacion">✨</p>
+      <h3>¡Venta confirmada!</h3>
+      <p id="confirmacion-resumen" class="confirmacion-resumen"></p>
+      <button type="button" id="boton-ver-factura-confirmacion" class="boton boton-negro ancho">Ver factura</button>
+      <button type="button" id="boton-nueva-venta" class="boton ancho boton-secundario">Nueva venta</button>
+    </div>
+  </div>
+
+  <div id="modal-detalle-venta" class="modal oculto">
+    <div class="modal-caja factura-caja">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-detalle-venta">✕</button>
+      <div id="contenido-detalle-venta"></div>
+      <button type="button" id="boton-factura-desde-detalle" class="boton boton-negro ancho">Ver factura</button>
+    </div>
+  </div>
+
+  <div id="overlay-factura" class="modal oculto">
+    <div class="modal-caja factura-caja">
+      <button type="button" class="boton-cerrar-modal no-imprimir" data-cerrar="overlay-factura">✕</button>
+      <div id="contenido-factura" class="contenido-factura"></div>
+      <button type="button" id="boton-imprimir-factura" class="boton boton-negro ancho no-imprimir">🖨️ Imprimir / Generar PDF</button>
+    </div>
+  </div>
+
+  <div id="modal-compra" class="modal oculto">
+    <div class="modal-caja modal-formulario modal-ancho">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-compra">✕</button>
+      <h3>Nueva compra</h3>
+
+      <div id="errores-compra" class="errores-formulario oculto"></div>
+
+      <form id="formulario-compra" novalidate>
+        <div class="fila-campos">
+          <div>
+            <label for="compra-proveedor">Proveedor</label>
+            <select id="compra-proveedor"></select>
+          </div>
+          <div>
+            <label for="compra-fecha">Fecha</label>
+            <input type="date" id="compra-fecha">
+          </div>
+        </div>
+
+        <label>Productos</label>
+        <div id="compra-lineas" class="compra-lineas"></div>
+        <button type="button" id="boton-agregar-linea-compra" class="boton boton-secundario">+ Agregar producto</button>
+
+        <p class="compra-total">Total de la compra: <strong id="compra-total">$0</strong></p>
+
+        <button type="submit" id="boton-registrar-compra" class="boton boton-negro ancho">Registrar compra</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-detalle-compra" class="modal oculto">
+    <div class="modal-caja factura-caja">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-detalle-compra">✕</button>
+      <div id="contenido-detalle-compra"></div>
+    </div>
+  </div>
+
+  <div id="modal-entidad" class="modal oculto">
+    <div class="modal-caja modal-formulario">
+      <button type="button" class="boton-cerrar-modal" data-cerrar="modal-entidad">✕</button>
+      <h3 id="titulo-modal-entidad"></h3>
+      <div id="errores-entidad" class="errores-formulario oculto"></div>
+      <form id="formulario-entidad" novalidate>
+        <div id="campos-entidad"></div>
+        <button type="submit" id="boton-guardar-entidad" class="boton boton-negro ancho">Guardar</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Ventana de confirmación propia (reemplaza los cuadros confirm() del navegador) -->
+  <div id="modal-confirmar" class="modal modal-confirmar oculto no-imprimir" data-propio="si">
+    <div class="modal-caja">
+      <p id="confirmar-icono" class="icono-confirmacion">⚠️</p>
+      <h3 id="confirmar-titulo"></h3>
+      <p id="confirmar-mensaje" class="confirmacion-resumen"></p>
+      <div class="botones-confirmar">
+        <button type="button" id="confirmar-cancelar" class="boton boton-secundario">Cancelar</button>
+        <button type="button" id="confirmar-aceptar" class="boton boton-negro">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="notificaciones" class="notificaciones no-imprimir" aria-live="polite"></div>
+
+  <footer class="pie no-imprimir">
+    <p>Papel y Luna © 2026</p>
+  </footer>
+
+  <!-- Acceso al servicio externo (único módulo que conoce la URL y usa fetch) -->
+  <script src="JavaScript/servicio/api.js"></script>
+  <!-- Utilidades -->
+  <script src="JavaScript/utilidades/utilidades.js"></script>
+  <!-- Estado de la aplicación -->
+  <script src="JavaScript/estado/estado.js"></script>
+  <!-- Vistas -->
+  <script src="JavaScript/vistas/navegacion.js"></script>
+  <script src="JavaScript/vistas/catalogo.js"></script>
+  <script src="JavaScript/vistas/venta.js"></script>
+  <script src="JavaScript/vistas/ventasAbiertas.js"></script>
+  <script src="JavaScript/vistas/deudas.js"></script>
+  <script src="JavaScript/vistas/edicionRapida.js"></script>
+  <script src="JavaScript/vistas/pago.js"></script>
+  <script src="JavaScript/vistas/productosAdmin.js"></script>
+  <script src="JavaScript/vistas/facturas.js"></script>
+  <script src="JavaScript/vistas/compras.js"></script>
+  <script src="JavaScript/vistas/entidades.js"></script>
+  <script src="JavaScript/vistas/menuFactura.js"></script>
+  <script src="JavaScript/roles.js"></script>
+  <script src="JavaScript/app.js"></script>
+</body>
+</html>
